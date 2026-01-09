@@ -1,12 +1,3 @@
-import subprocess
-import sys
-
-# Attempt to install opencv-python-headless if missing
-try:
-    import cv2
-except ImportError:
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "opencv-python-headless"])
-    import cv2  # Try importing again
 import streamlit as st
 import cv2
 import numpy as np
@@ -16,228 +7,217 @@ import altair as alt
 from datetime import datetime
 
 # ==========================================
-# 1. PAGE CONFIGURATION
+# 1. PAGE CONFIGURATION & STYLING
 # ==========================================
 st.set_page_config(
-    page_title="RailVision EdgeAI Command Center",
+    page_title="RailVision Command Center",
     page_icon="🚄",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for "Dark Mode" Professional Look
+# Professional Dark Mode CSS
 st.markdown("""
 <style>
-    .reportview-container {
-        background: #0e1117;
+    /* Metric Cards */
+    div[data-testid="stMetricValue"] {
+        font-size: 24px;
+        color: #4caf50;
     }
-    .metric-card {
-        background-color: #262730;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 5px solid #ff4b4b;
+    .stAlert {
+        padding: 10px;
+        border-radius: 5px;
     }
-    .big-font {
-        font-size: 24px !important;
-        font-weight: bold;
+    /* Custom headers */
+    h1, h2, h3 {
+        font-family: 'Segoe UI', sans-serif;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DUMMY AI MODELS (Replace with your Real Pipelines)
+# 2. HELPER FUNCTIONS & SIMULATION
 # ==========================================
-def run_ai_pipeline(frame, enable_enhancement):
+
+def generate_synthetic_frame(text_overlay, noise_level=0):
+    """Generates a dummy frame if no video is uploaded, ensuring the demo NEVER fails."""
+    # Create black background
+    img = np.zeros((360, 640, 3), dtype=np.uint8)
+    
+    # Add some "Noise" (simulating low light grain)
+    if noise_level > 0:
+        noise = np.random.normal(0, noise_level, img.shape).astype(np.uint8)
+        img = cv2.add(img, noise)
+    
+    # Add a moving element (simulating a train passing)
+    x_pos = int((time.time() * 200) % 640)
+    cv2.rectangle(img, (x_pos, 50), (x_pos+300, 310), (50, 50, 50), -1) # Wagon body
+    cv2.rectangle(img, (x_pos+20, 100), (x_pos+280, 260), (30, 30, 30), -1) # Door
+    
+    # Add Text
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(img, text_overlay, (50, 50), font, 1, (0, 255, 255), 2)
+    return img
+
+def image_enhancement_simulation(frame, cam_type):
     """
-    Simulates your full pipeline:
-    Blur Check -> Deblur -> Low Light -> OCR -> Damage
+    Simulates the specific model behavior based on your PPT.
+    - Side Camera: Fixes Motion Blur (DeblurGAN-v2)
+    - Undercarriage: Fixes Low Light (Zero-DCE)
     """
-    # Simulate processing delay
-    time.sleep(0.03) 
+    height, width = frame.shape[:2]
     
-    # 1. Simulate Enhancement (Just visual trick for demo if no model loaded)
-    processed_frame = frame.copy()
-    if enable_enhancement:
-        # Fake "Enhancement": Increase contrast/brightness to look 'cleaned'
-        processed_frame = cv2.convertScaleAbs(frame, alpha=1.2, beta=10)
-        # Add a green border to show "AI Active"
-        cv2.rectangle(processed_frame, (0,0), (frame.shape[1], frame.shape[0]), (0, 255, 0), 10)
+    # 1. Create the "Dirty" Input (Simulated)
+    dirty_frame = frame.copy()
     
-    # 2. Simulate OCR & Damage Data
-    # In real code, return actual model outputs here
-    mock_data = {
-        "wagon_id": f"WR-{np.random.randint(10000, 99999)}",
-        "blur_score": np.random.uniform(0.1, 0.9),
-        "defects": np.random.choice(["None", "Crack", "Rust"], p=[0.8, 0.1, 0.1]),
-        "confidence": np.random.uniform(85, 99)
-    }
+    if cam_type == "Undercarriage (Low Light)":
+        # Simulate Darkness
+        dirty_frame = (dirty_frame * 0.3).astype(np.uint8)
+    elif cam_type == "Side Camera (Motion Blur)":
+        # Simulate Blur
+        dirty_frame = cv2.GaussianBlur(dirty_frame, (15, 15), 0)
+        
+    # 2. Create the "Clean" Output (Visual Trick for Demo)
+    # In a real scenario, this is where model(frame) runs
+    clean_frame = frame.copy()
     
-    return processed_frame, mock_data
+    # Add Overlay to show AI is working
+    cv2.putText(clean_frame, "AI ENHANCED (TensorRT)", (20, height - 20), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    
+    return dirty_frame, clean_frame
 
 # ==========================================
-# 3. SIDEBAR CONTROLS
+# 3. SIDEBAR (MATCHING PPT)
 # ==========================================
 with st.sidebar:
-    st.image("https://img.icons8.com/color/96/000000/high-speed-train.png", width=80)
+    st.image("https://img.icons8.com/color/96/000000/high-speed-train.png", width=60)
     st.title("RailVision Config")
     
-    st.markdown("---")
-    st.subheader("📡 Input Source")
-    input_source = st.radio("Select Feed:", ("Upload Video", "RTSP Stream (Simulated)"))
+    st.subheader("📷 Camera Feed Selection")
+    # PPT mentions 3 cameras
+    cam_select = st.selectbox(
+        "Active Sensor:", 
+        ["Side Camera (Motion Blur)", "Top Camera", "Undercarriage (Low Light)"]
+    )
     
-    st.markdown("---")
-    st.subheader("🧠 AI Modules")
-    enable_deblur = st.checkbox("Motion Deblurring (GAN)", value=True)
-    enable_lowlight = st.checkbox("Night Vision (Zero-DCE)", value=True)
-    enable_ocr = st.checkbox("Wagon OCR", value=True)
+    st.divider()
     
-    st.markdown("---")
-    st.info("System Status: **ONLINE**\n\nDevice: **NVIDIA Jetson AGX**\n\nTemp: **42°C**")
+    st.subheader("🧠 Model Pipeline")
+    st.caption("Active Models (Jetson AGX)")
+    st.checkbox("DeblurGAN-v2", value=True, disabled=True)
+    st.checkbox("Zero-DCE (Night)", value=True, disabled=True)
+    st.checkbox("PaddleOCR", value=True, disabled=True)
+    st.checkbox("YOLOv8-Small", value=True, disabled=True)
+    
+    st.divider()
+    st.info(f"**Status:** RUNNING\n\n**FPS:** {np.random.randint(38, 45)}\n\n**Latency:** 18ms")
 
 # ==========================================
-# 4. MAIN DASHBOARD UI
+# 4. MAIN DASHBOARD
 # ==========================================
-st.title("🚄 RailVision: Intelligent Wagon Inspection")
-st.markdown("Real-time edge analytics for high-speed freight monitoring.")
+st.title("🚄 RailVision: Edge AI Inspection System")
+st.markdown(f"**Current View:** {cam_select} | **Speed:** 72 km/h")
 
-# Tabs for different views
-tab1, tab2, tab3 = st.tabs(["🔴 Live Inspector", "📊 Analytics Hub", "⚙️ System Health"])
+# TABS
+tab_live, tab_analytics, tab_arch = st.tabs(["🔴 Live Inspection", "📊 Analytics Hub", "🛠️ Architecture"])
 
 # --- TAB 1: LIVE INSPECTOR ---
-with tab1:
-    col1, col2 = st.columns([2, 1])
+with tab_live:
+    col_video, col_data = st.columns([0.65, 0.35])
     
-    with col1:
-        st.subheader("Live Camera Feed (Side View)")
-        video_placeholder = st.empty()
+    with col_video:
+        st.subheader("Real-Time Enhancement")
+        image_spot = st.empty()
         
-        # Comparison Toggle
-        view_mode = st.radio("View Mode:", ["Split Screen (Raw vs Enhanced)", "Final Output Only"], horizontal=True)
+    with col_data:
+        st.subheader("Live Telemetry")
+        
+        # Dynamic Metrics based on PPT
+        m1, m2 = st.columns(2)
+        m1.metric("Wagon ID", "WR-8472")
+        m2.metric("Conf.", "98.2%")
+        
+        st.markdown("---")
+        st.markdown("**Defect Status:**")
+        defect_spot = st.empty()
+        
+        st.markdown("---")
+        st.markdown("**Enhancement Metrics:**")
+        blur_chart_spot = st.empty()
 
-    with col2:
-        st.subheader("Real-Time Telemetry")
-        # Placeholders for live metrics
-        ocr_card = st.empty()
-        blur_metric = st.empty()
-        defect_alert = st.empty()
-
-    # --- Video Loop Logic ---
-    start_btn = st.button("▶️ Start Inspection")
+    # ANIMATION LOOP
+    start = st.toggle("▶️ Activate Edge AI System", value=False)
     
-    if start_btn:
-        # Use a demo video or webcam (0)
-        cap = cv2.VideoCapture("demo_video.mp4" if input_source == "Upload Video" else 0) 
+    if start:
+        # Try loading video, else use generator
+        cap = cv2.VideoCapture("demo_video.mp4")
         
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                st.warning("End of video stream.")
-                break
+        while True:
+            # 1. Get Frame
+            if cap.isOpened():
+                ret, raw_frame = cap.read()
+                if not ret:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0) # Loop video
+                    continue
+                raw_frame = cv2.resize(raw_frame, (640, 360))
+            else:
+                # Fallback generator
+                raw_frame = generate_synthetic_frame("Simulating Input...", noise_level=10)
+            
+            # 2. Process Frame (Simulate AI)
+            dirty, clean = image_enhancement_simulation(raw_frame, cam_select)
+            
+            # 3. Update Display (Split Screen)
+            combined = np.hstack((dirty, clean))
+            image_spot.image(combined, channels="BGR", caption="Input (Degraded) vs. Output (Restored)")
+            
+            # 4. Update Metrics (Randomized for liveliness)
+            if np.random.rand() > 0.90:
+                defect_spot.error("⚠️ CRITICAL: BRAKE BEAM CRACK")
+            else:
+                defect_spot.success("✅ SYSTEM NORMAL")
                 
-            # Resize for dashboard performance
-            frame = cv2.resize(frame, (640, 360))
+            # Blur Gauge
+            blur_val = pd.DataFrame({"Blur": [np.random.uniform(0.1, 0.4)]})
+            blur_chart_spot.bar_chart(blur_val, height=100)
             
-            # Run AI
-            enhanced_frame, data = run_ai_pipeline(frame, enable_enhancement=(enable_deblur or enable_lowlight))
-            
-            # --- UPDATE UI COMPONENTS ---
-            
-            # 1. Video Player
-            if view_mode == "Split Screen (Raw vs Enhanced)":
-                # Stack images horizontally
-                combined = np.hstack((frame, enhanced_frame))
-                video_placeholder.image(combined, channels="BGR", caption="Left: RAW Input | Right: RailVision Enhanced", use_column_width=True)
-            else:
-                video_placeholder.image(enhanced_frame, channels="BGR", caption="Final AI Output", use_column_width=True)
-            
-            # 2. OCR Card (Styled)
-            ocr_card.markdown(f"""
-            <div class="metric-card">
-                <h3>🆔 Wagon ID: <span style="color:#4caf50">{data['wagon_id']}</span></h3>
-                <p>Confidence: {data['confidence']:.1f}%</p>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 3. Blur Metric (Gauge)
-            blur_val = data['blur_score']
-            blur_color = "red" if blur_val > 0.6 else "green"
-            blur_metric.markdown(f"""
-            **Motion Blur Level:**
-            <div style="width:100%; background-color:#ddd; border-radius:5px;">
-                <div style="width:{blur_val*100}%; background-color:{blur_color}; height:10px; border-radius:5px;"></div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 4. Defect Alert
-            if data['defects'] != "None":
-                defect_alert.error(f"⚠️ DEFECT DETECTED: {data['defects']}")
-            else:
-                defect_alert.success("✅ Wagon Status: CLEAR")
+            time.sleep(0.05) # Control FPS
 
-            # 5. Log Data to Session State (for Analytics Tab)
-            if "log_data" not in st.session_state:
-                st.session_state["log_data"] = []
-            
-            st.session_state["log_data"].append({
-                "Time": datetime.now().strftime("%H:%M:%S"),
-                "Wagon ID": data['wagon_id'],
-                "Defect": data['defects'],
-                "Blur": data['blur_score']
-            })
+# --- TAB 2: ANALYTICS ---
+with tab_analytics:
+    st.subheader("Post-Operation Report")
+    
+    # Mock Data matching PPT context
+    data = pd.DataFrame({
+        "Wagon Type": ["BOXN", "Bcn", "Tanker", "Flatbed", "BOXN"],
+        "Defects": [5, 2, 0, 1, 4],
+        "Avg Confidence": [95, 92, 98, 89, 94]
+    })
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### Defect Counts by Type")
+        st.bar_chart(data.set_index("Wagon Type")["Defects"])
+    
+    with c2:
+        st.markdown("### Blur Correction Performance")
+        chart_data = pd.DataFrame(np.random.randn(20, 3), columns=["DeblurGAN", "Zero-DCE", "Raw"])
+        st.line_chart(chart_data)
 
-# --- TAB 2: ANALYTICS HUB ---
-with tab2:
-    st.subheader("Post-Operation Analytics")
+# --- TAB 3: ARCHITECTURE (PPT INFO) ---
+with tab_arch:
+    st.header("Technical Stack")
+    st.info("Deployment: NVIDIA Jetson AGX Orin (TensorRT Optimized)")
     
-    if "log_data" in st.session_state and len(st.session_state["log_data"]) > 0:
-        df = pd.DataFrame(st.session_state["log_data"])
-        
-        # 1. Summary Metrics
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total Wagons Scanned", len(df))
-        m2.metric("Defects Found", len(df[df["Defect"] != "None"]))
-        m3.metric("Avg Blur Score", f"{df['Blur'].mean():.2f}")
-        
-        # 2. Charts
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("### Defect Distribution")
-            chart_data = df["Defect"].value_counts().reset_index()
-            chart_data.columns = ["Type", "Count"]
-            c = alt.Chart(chart_data).mark_bar().encode(
-                x='Type', y='Count', color='Type'
-            )
-            st.altair_chart(c, use_container_width=True)
-            
-        with c2:
-            st.markdown("### Blur Levels Over Time")
-            st.line_chart(df["Blur"])
-            
-        # 3. Detailed Data Table
-        st.dataframe(df)
-        
-        # Export Button
-        st.download_button("📥 Download Inspection Report", df.to_csv(), "railvision_report.csv")
-    else:
-        st.info("Start the inspection in 'Live Inspector' to generate data.")
-
-# --- TAB 3: SYSTEM HEALTH ---
-with tab3:
-    st.subheader("Edge Device Telemetry (Jetson AGX)")
-    colA, colB = st.columns(2)
-    
-    with colA:
-        st.progress(72, text="GPU Usage (CUDA Core Load)")
-        st.progress(45, text="RAM Usage (14GB / 32GB)")
-    
-    with colB:
-        st.metric("Inference Latency", "12ms", "-2ms")
-        st.metric("FPS", "42", "+4")
+    c1, c2, c3 = st.columns(3)
+    c1.success("**Motion Blur:** DeblurGAN-v2")
+    c2.warning("**Low Light:** Zero-DCE")
+    c3.error("**Detection:** YOLOv8 + PaddleOCR")
     
     st.code("""
-    # Model Loading Status
-    [OK] DeblurGAN-v2 (FP16 optimized)
-    [OK] Zero-DCE (TensorRT engine)
-    [OK] PaddleOCR (v3.0)
-    [OK] YOLOv8 (Small)
+    # Hardware Acceleration Pipeline
+    Input (RTSP) -> CUDA Buffer -> TensorRT Engine -> Output
+    Throughput: 42 FPS @ 1080p
+    Latency: < 20ms
     """, language="bash")
