@@ -1,3 +1,12 @@
+import subprocess
+import sys
+
+# Attempt to install opencv-python-headless if missing
+try:
+    import cv2
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "opencv-python-headless"])
+    import cv2  # Try importing again
 import streamlit as st
 import cv2
 import numpy as np
