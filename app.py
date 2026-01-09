@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import time
 import altair as alt
-from datetime import datetime
 
 # ==========================================
 # 1. PAGE CONFIGURATION & STYLING
@@ -51,8 +50,10 @@ def generate_synthetic_frame(text_overlay, noise_level=0):
     
     # Add a moving element (simulating a train passing)
     x_pos = int((time.time() * 200) % 640)
-    cv2.rectangle(img, (x_pos, 50), (x_pos+300, 310), (50, 50, 50), -1) # Wagon body
-    cv2.rectangle(img, (x_pos+20, 100), (x_pos+280, 260), (30, 30, 30), -1) # Door
+    # Draw Wagon
+    cv2.rectangle(img, (x_pos, 50), (x_pos+300, 310), (50, 50, 50), -1) 
+    # Draw Door
+    cv2.rectangle(img, (x_pos+20, 100), (x_pos+280, 260), (30, 30, 30), -1) 
     
     # Add Text
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -78,7 +79,6 @@ def image_enhancement_simulation(frame, cam_type):
         dirty_frame = cv2.GaussianBlur(dirty_frame, (15, 15), 0)
         
     # 2. Create the "Clean" Output (Visual Trick for Demo)
-    # In a real scenario, this is where model(frame) runs
     clean_frame = frame.copy()
     
     # Add Overlay to show AI is working
