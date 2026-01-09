@@ -1,0 +1,21 @@
+# --- Core Dashboard ---
+streamlit
+pandas
+numpy
+altair
+matplotlib
+pillow
+
+# --- Computer Vision & Image Processing ---
+# Use headless for server/cloud environments to avoid libGL errors
+opencv-python-headless
+scikit-image
+tqdm
+
+# --- Deep Learning Backend ---
+torch
+torchvision
+ultralytics
+# Note: If using PaddleOCR later, uncomment the next two lines:
+# paddlepaddle
+# paddleocr
