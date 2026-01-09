@@ -1,5 +1,5 @@
 streamlit
-pandas
-numpy
-altair
+numpy<2.3.0
 opencv-python-headless
+pandas
+altair
